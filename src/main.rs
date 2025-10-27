@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use std::fs::{read_to_string};
 mod commands; 
 use commands::{register_default_commands};
+use std::env;
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(tag = "type")]
 enum Step {
@@ -61,9 +62,14 @@ fn emit_event(event_type: &str, step_name: &str, message: &str, step_id: u64) {
 
  
 fn main() {
+
+    let args: Vec<String> = env::args().collect();
+    if args.len() !=2{
+        panic!("expect work flow filename as input");
+    }
     let command_registry = register_default_commands();
     // ---- Load and parse workflow ----
-    let result = read_to_string("./src/sample/workflow2.json")
+    let result = read_to_string(&args[1])
         .expect("File not found");
     let workflow: Workflow =
         serde_json::from_str(&result).expect("Unable to parse JSON");
