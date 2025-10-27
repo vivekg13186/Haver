@@ -2,8 +2,9 @@ use rhai::{Dynamic, Engine, Scope};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::HashMap;
-use std::fs::read_to_string;
-
+use std::fs::{read_to_string};
+mod commands; 
+use commands::{register_default_commands};
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(tag = "type")]
 enum Step {
@@ -23,7 +24,6 @@ struct Workflow {
     inputs: HashMap<String, Value>,
     steps: HashMap<String, Step>,
 }
-
 // ---- Convert JSON -> Rhai Dynamic ----
 fn json_value_to_rhai(value: &Value) -> Dynamic {
     match value {
@@ -59,39 +59,11 @@ fn emit_event(event_type: &str, step_name: &str, message: &str, step_id: u64) {
     println!("{}", serde_json::to_string_pretty(&event).unwrap());
 }
 
-// ---- Execute command steps ----
-fn execute_command(
-    command: &str,
-    inputs: &HashMap<String, String>,
-    scope: &mut Scope,
-    engine: &Engine,
-    step_name: &str,
-    step_id: u64,
-) -> Result<String, String> {
-    match command {
-        "Log" => {
-            let expr = inputs
-                .get("message")
-                .ok_or("Missing 'message' input")?;
-            let msg = engine
-                .eval_with_scope::<String>(scope, expr)
-                .map_err(|_| format!("Failed to evaluate Log message: {expr}"))?;
-
-            // print to console
-            //println!("[LOG] {}", msg);
-
-            // emit a JSON log event
-            emit_event("log", step_name, &msg, step_id);
-
-            Ok(format!("Logged message: {msg}"))
-        }
-        _ => Err(format!("Unknown command: {}", command)),
-    }
-}
-
+ 
 fn main() {
+    let command_registry = register_default_commands();
     // ---- Load and parse workflow ----
-    let result = read_to_string("./src/sample/workflow1.json")
+    let result = read_to_string("./src/sample/workflow2.json")
         .expect("File not found");
     let workflow: Workflow =
         serde_json::from_str(&result).expect("Unable to parse JSON");
@@ -138,23 +110,26 @@ fn main() {
                 break;
             }
 
-            Step::Command {
+           Step::Command {
                 command,
                 next,
                 inputs,
             } => {
-                match execute_command(command, inputs, &mut scope, &engine, &step_name, step_counter)
-                {
-                    Ok(msg) => emit_event("end", &step_name, &msg, step_counter),
-                    Err(e) => {
-                        emit_event("error", &step_name, &e, step_counter);
-                        break;
+                if let Some(cmd) = command_registry.get(command) {
+                    match cmd.execute(inputs, &mut scope, &engine, &step_name, step_counter) {
+                        Ok(msg) => println!("✅ {}", msg),
+                        Err(err) => {
+                            eprintln!("❌ Error in {}: {}", command, err);
+                            break;
+                        }
                     }
+                } else {
+                    eprintln!("⚠️ Unknown command: {}", command);
+                    break;
                 }
-                step_counter += 1;
+
                 step_name = next.clone();
             }
-
             Step::Condition { conditions } => {
                 let mut matched = false;
                 for (cond, nxt) in conditions {
