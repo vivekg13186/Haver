@@ -1,19 +1,15 @@
 use rhai::{Dynamic, Engine, Scope};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{json, Value};
+use std::collections::HashMap;
 use std::fs::read_to_string;
-use std::{collections::HashMap, process::Command};
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(tag = "type")]
 enum Step {
-    Start {
-        next: String,
-    },
+    Start { next: String },
     End {},
-    Condition {
-        conditions: HashMap<String, String>,
-    },
+    Condition { conditions: HashMap<String, String> },
     Command {
         command: String,
         next: String,
@@ -28,135 +24,171 @@ struct Workflow {
     steps: HashMap<String, Step>,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-struct Task {
-    name: String,
-    start_time: String,
-    end_time: String,
-    status: String,
-    error: String,
-}
-#[derive(Serialize, Deserialize, Debug)]
-struct WorkflowOutput {
-    logs: Vec<String>,
-    tasks: Vec<Task>,
-    start_time: String,
-    end_time: String,
-}
-
-// same helper function from above
-fn json_value_to_rhai(value: &Value) -> Result<Dynamic, Box<rhai::EvalAltResult>> {
-    Ok(match value {
+// ---- Convert JSON -> Rhai Dynamic ----
+fn json_value_to_rhai(value: &Value) -> Dynamic {
+    match value {
         Value::Null => Dynamic::UNIT,
         Value::Bool(b) => Dynamic::from(*b),
-        Value::Number(n) => {
-            if let Some(i) = n.as_i64() {
-                Dynamic::from(i)
-            } else if let Some(f) = n.as_f64() {
-                Dynamic::from(f)
-            } else {
-                Dynamic::UNIT
-            }
-        }
+        Value::Number(n) => n
+            .as_f64()
+            .map(Dynamic::from)
+            .unwrap_or_else(|| Dynamic::UNIT),
         Value::String(s) => Dynamic::from(s.clone()),
-        Value::Array(arr) => {
-            let vec: Vec<Dynamic> = arr
-                .iter()
-                .map(|v| json_value_to_rhai(v).unwrap_or(Dynamic::UNIT))
-                .collect();
-            Dynamic::from_array(vec)
-        }
+        Value::Array(arr) => Dynamic::from_array(
+            arr.iter().map(|v| json_value_to_rhai(v)).collect(),
+        ),
         Value::Object(obj) => {
             let mut map = rhai::Map::new();
             for (k, v) in obj {
-                map.insert(k.into(), json_value_to_rhai(v)?);
+                map.insert(k.into(), json_value_to_rhai(v));
             }
             Dynamic::from_map(map)
         }
-    })
+    }
+}
+
+// ---- Emit structured JSON event ----
+fn emit_event(event_type: &str, step_name: &str, message: &str, step_id: u64) {
+    let event = json!({
+        "id": step_id,
+        "event": event_type,
+        "step": step_name,
+        "message": message,
+        "timestamp": chrono::Utc::now().to_rfc3339(),
+    });
+    println!("{}", serde_json::to_string_pretty(&event).unwrap());
+}
+
+// ---- Execute command steps ----
+fn execute_command(
+    command: &str,
+    inputs: &HashMap<String, String>,
+    scope: &mut Scope,
+    engine: &Engine,
+    step_name: &str,
+    step_id: u64,
+) -> Result<String, String> {
+    match command {
+        "Log" => {
+            let expr = inputs
+                .get("message")
+                .ok_or("Missing 'message' input")?;
+            let msg = engine
+                .eval_with_scope::<String>(scope, expr)
+                .map_err(|_| format!("Failed to evaluate Log message: {expr}"))?;
+
+            // print to console
+            //println!("[LOG] {}", msg);
+
+            // emit a JSON log event
+            emit_event("log", step_name, &msg, step_id);
+
+            Ok(format!("Logged message: {msg}"))
+        }
+        _ => Err(format!("Unknown command: {}", command)),
+    }
 }
 
 fn main() {
-    let result = read_to_string("./src/sample/workflow1.json").expect("File not found");
-    let json: Workflow = serde_json::from_str(&result).expect("Unable to parse json");
+    // ---- Load and parse workflow ----
+    let result = read_to_string("./src/sample/workflow1.json")
+        .expect("File not found");
+    let workflow: Workflow =
+        serde_json::from_str(&result).expect("Unable to parse JSON");
 
-    //dbg!(&json);
-    let start_step = json
+    // ---- Find start step ----
+    let (start_name, _) = workflow
         .steps
         .iter()
-        .find(|(_, value)| match value {
-            Step::Start { next: _ } => true,
-            _ => false,
-        })
-        .expect("Start step not found");
-    //dbg!(&start_step);
-    let mut step_name = start_step.0;
-    //dbg!(&step_name);
-    let mut current_step = start_step.1;
-    //dbg!(&current_step);
+        .find(|(_, v)| matches!(v, Step::Start { .. }))
+        .expect("No start step found");
+
+    let mut step_name = start_name.clone();
     let engine = Engine::new();
     let mut scope = Scope::new();
-    for (key, value) in &json.inputs {
-        scope.push_dynamic(
-            key.clone(),
-            json_value_to_rhai(value).expect("cannot parse given input"),
-        );
+
+    // ---- Load workflow inputs into scope ----
+    for (key, value) in &workflow.inputs {
+        scope.push_dynamic(key.clone(), json_value_to_rhai(value));
     }
+
+    let mut step_counter: u64 = 1;
+
+    // ---- Main workflow loop ----
     loop {
-        //print!("Executing : {}\n",step_name);
-        match current_step {
-            Step::Start { next: nxt } => {
-                step_name = nxt;
-                match json.steps.get(step_name) {
-                    Some(step) => current_step = step,
-                    None => {
-                        print!("no next step found");
-                        break;
-                    }
-                }
-            }
-            Step::End {} => {
+        let current_step = match workflow.steps.get(&step_name) {
+            Some(s) => s,
+            None => {
+                emit_event("error", &step_name, "Step not found in workflow", step_counter);
                 break;
             }
+        };
+
+        emit_event("start", &step_name, "Step execution started", step_counter);
+
+        match current_step {
+            Step::Start { next } => {
+                emit_event("end", &step_name, "Start step complete", step_counter);
+                step_counter += 1;
+                step_name = next.clone();
+            }
+
+            Step::End {} => {
+                emit_event("end", &step_name, "Workflow finished", step_counter);
+                break;
+            }
+
             Step::Command {
                 command,
                 next,
                 inputs,
             } => {
-                match command.as_str() {
-                    "Log" => {
-                        let message_exp = inputs
-                            .get("message")
-                            .expect("print command missing message input");
-                        let message = engine
-                            .eval_with_scope::<String>(&mut scope, &message_exp)
-                            .expect("error eval print statement");
-                        print!("{}\n", message);
-                    }
-                    _ => {
-                        print!("unknown command {}", command)
+                match execute_command(command, inputs, &mut scope, &engine, &step_name, step_counter)
+                {
+                    Ok(msg) => emit_event("end", &step_name, &msg, step_counter),
+                    Err(e) => {
+                        emit_event("error", &step_name, &e, step_counter);
+                        break;
                     }
                 }
-                step_name = next;
-                current_step = json.steps.get(step_name).expect("Next step not found");
+                step_counter += 1;
+                step_name = next.clone();
             }
+
             Step::Condition { conditions } => {
-                let mut match_condition = false;
-                for (condition, next) in conditions {
-                    let result = if condition == "else" {
+                let mut matched = false;
+                for (cond, nxt) in conditions {
+                    let result = if cond == "else" {
                         true
                     } else {
-                        engine
-                            .eval_with_scope::<bool>(&mut scope, &condition)
-                            .expect("error eval condition")
+                        match engine.eval_with_scope::<bool>(&mut scope, cond) {
+                            Ok(v) => v,
+                            Err(_) => {
+                                emit_event(
+                                    "error",
+                                    &step_name,
+                                    &format!("Invalid condition: {}", cond),
+                                    step_counter,
+                                );
+                                false
+                            }
+                        }
                     };
                     if result {
-                        step_name = next;
-                        current_step = json.steps.get(step_name).expect("Next step not found");
-                        match_condition = true;
+                        emit_event(
+                            "end",
+                            &step_name,
+                            &format!("Condition matched: {}", cond),
+                            step_counter,
+                        );
+                        step_counter += 1;
+                        step_name = nxt.clone();
+                        matched = true;
+                        break;
                     }
                 }
-                if !match_condition {
+                if !matched {
+                    emit_event("error", &step_name, "No condition matched", step_counter);
                     break;
                 }
             }
