@@ -45,9 +45,9 @@ fn handle_step(step: &Step, engine: &mut Engine, scope: &mut Scope) -> Result<i3
             Ok(*next) 
         },
         Step::ReadFile { path, next, content, error } => handle_read_file(path, *next, content, error, engine, scope),
-        Step::WriteFile { path, content, next, sucess, error } => handle_write_file(path, content, *next, sucess, error, engine, scope),
-        Step::AppendFile { path, content, next, sucess, error } => handle_append_file(path, content, *next, sucess, error, engine, scope),
-        Step::DeleteFile { path, next, sucess, error } => handle_delete_file(path, *next, sucess, error, engine, scope),
+        Step::WriteFile { path, content, next, status, error } => handle_write_file(path, content, *next, status, error, engine, scope),
+        Step::AppendFile { path, content, next, status, error } => handle_append_file(path, content, *next, status, error, engine, scope),
+        Step::DeleteFile { path, next, status, error } => handle_delete_file(path, *next, status, error, engine, scope),
         Step::Http { url, method, headers, query, body, auth, next, status, response } =>
             handle_http(url, method, headers, query, body, auth, *next, status, response, engine, scope),
     }

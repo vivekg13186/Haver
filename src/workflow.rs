@@ -38,20 +38,20 @@ pub enum Step {
         path: String,
         content: String,
         next: i32,
-        sucess: String,
+        status: String,
         error: String,
     },
     AppendFile {
         path: String,
         content: String,
         next: i32,
-        sucess: String,
+        status: String,
         error: String,
     },
     DeleteFile {
         path: String,
         next: i32,
-        sucess: String,
+        status: String,
         error: String,
     },
     Http {

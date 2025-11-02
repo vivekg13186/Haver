@@ -1,0 +1,29 @@
+{
+    "name": "File write Workflow",
+    "inputs": {
+        "filename": "a.txt",
+        "message": "\"File content\""
+    },
+    "steps": [
+        {
+            "type": "Start",
+            "next": 1
+        },
+        {
+            "type": "WriteFile",
+            "path": "filename",
+            "content" : "\"Hello vivek\"",
+            "next": 2,
+            "status": "fileStatus",
+            "error": "writeFileError"
+        },
+        {
+            "type": "Log",
+            "message": "fileStatus + \"file status\" +writeFileError + \" error \" ",
+            "next": 3
+        },
+        {
+            "type": "End"
+        }
+    ]
+}
