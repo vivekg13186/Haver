@@ -25,3 +25,19 @@ Refer to the `sample` folder for example workflow definitions.
 - **End** – marks the termination of the workflow
 - **Command** – executes an operation / logic block, takes input and returns output as a JSON object
 - **Condition** – evaluates a given condition and determines the next step based on the result
+
+
+## TODO
+
+Cron scheduler
+Copy File
+Zip File
+UnZip
+Tar File
+UnTar
+List Dir
+Walk Dir
+Parse HTML
+Parse XML
+Parse YML
+Script
