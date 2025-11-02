@@ -3,6 +3,12 @@
 Haver is a microflow engine.  
 The engine ingests a JSON workflow definition and executes it.
 
+```mermaid
+flowchart LR
+    A[Workflow json file] --> B
+    B[Haver engine] --> C
+    C[Events]
+```
 ## Workflow Definition
 
 A workflow JSON definition is composed of `name`, `input` and `steps`:
