@@ -1,0 +1,59 @@
+{
+  "name": "File Operations Demo",
+  "inputs": {
+    "filename": "demo.txt",
+    "initial_text": "Hello, world!",
+    "additional_text": " This is appended.",
+    "should_delete": true
+  },
+  "steps": {
+    "start": {
+      "type": "Start",
+      "next": "write"
+    },
+    "write": {
+      "type": "Command",
+      "command": "WriteFile",
+      "next": "append",
+      "inputs": {
+        "path": "filename",
+        "text": "initial_text"
+      }
+    },
+    "append": {
+      "type": "Command",
+      "command": "AppendFile",
+      "next": "read",
+      "inputs": {
+        "path": "filename",
+        "text": "additional_text"
+      }
+    },
+    "read": {
+      "type": "Command",
+      "command": "ReadFile",
+      "next": "check_delete",
+      "inputs": {
+        "path": "filename"
+      }
+    },
+    "check_delete": {
+      "type": "Condition",
+      "conditions": {
+        "should_delete == true": "delete",
+        "else": "end"
+      }
+    },
+    "delete": {
+      "type": "Command",
+      "command": "DeleteFile",
+      "next": "end",
+      "inputs": {
+        "path": "filename"
+      }
+    },
+    "end": {
+      "type": "End"
+    }
+  }
+}

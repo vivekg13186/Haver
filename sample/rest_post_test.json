@@ -1,0 +1,24 @@
+{
+    "name": "Rest API Test",
+    "inputs": {},
+    "steps": {
+        "start": {
+            "type": "Start",
+            "next": "call_api"
+        },
+        "call_api": {
+            "type": "Command",
+            "command": "RestApi",
+            "next": "end",
+            "inputs": {
+                "method": "\"POST\"",
+                "url": "\"https://httpbin.org/post\"",
+                "body": "\"{ \\\"name\\\": \\\"vivek\\\" }\"",
+                "headers": "#{ 'Content-Type': 'application/json' }"
+            }
+        },
+        "end": {
+            "type": "End"
+        }
+    }
+}

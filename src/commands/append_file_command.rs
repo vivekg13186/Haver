@@ -1,13 +1,14 @@
 use std::collections::HashMap;
+use std::fs::OpenOptions;
+use std::io::Write;
 use boa_engine::Context;
-use std::fs::write;
 use crate::commands::WorkflowCommand;
 
-pub struct WriteFileCommand;
+pub struct AppendFileCommand;
 
-impl WorkflowCommand for WriteFileCommand {
+impl WorkflowCommand for AppendFileCommand {
     fn name(&self) -> &'static str {
-        "WriteFile"
+        "AppendFile"
     }
 
     fn execute(
@@ -16,7 +17,7 @@ impl WorkflowCommand for WriteFileCommand {
         context : &mut Context,
         _step_name: &str,
         _step_id: u64,
-    ) -> Result<HashMap<String, String>,String> {
+    ) -> Result<HashMap<String, String>, String> {
         let path_expr = inputs.get("path").ok_or("Missing 'path' input")?;
         let text_expr = inputs.get("text").ok_or("Missing 'text' input")?;
 
@@ -27,11 +28,18 @@ impl WorkflowCommand for WriteFileCommand {
             .eval_with_scope::<String>(scope, text_expr)
             .map_err(|e| format!("Failed to evaluate text: {}", e))?;
 
-        write(&path, text.as_bytes()).map_err(|e| format!("File write failed: {}", e))?;
+        let mut file = OpenOptions::new()
+            .append(true)
+            .create(true)
+            .open(&path)
+            .map_err(|e| format!("Failed to open file: {}", e))?;
+
+        file.write_all(text.as_bytes())
+            .map_err(|e| format!("Failed to append to file: {}", e))?;
 
         let mut output = HashMap::new();
         output.insert("path".to_string(), path);
-        output.insert("status".to_string(), "written".to_string());
+        output.insert("status".to_string(), "appended".to_string());
         Ok(output)
     }
 }

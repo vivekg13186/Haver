@@ -1,0 +1,24 @@
+{
+  "name": "Rest API Test",
+  "inputs": {},
+  "steps": {
+    "start": {
+      "type": "Start",
+      "next": "call_api"
+    },
+    "call_api": {
+      "type": "Command",
+      "command": "RestApi",
+      "next": "end",
+      "inputs": {
+        "method": "\"GET\"",
+        "url": "\"https://api.example.com/data\"",
+        "headers": "#{ 'Authorization': 'Bearer token123' }",
+        "query": "#{ 'user': 'vivek', 'limit': '5' }"
+      }
+    },
+    "end": {
+      "type": "End"
+    }
+  }
+}

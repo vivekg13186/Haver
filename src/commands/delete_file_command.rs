@@ -1,37 +1,32 @@
 use std::collections::HashMap;
+use std::fs::remove_file;
 use boa_engine::Context;
-use std::fs::write;
 use crate::commands::WorkflowCommand;
 
-pub struct WriteFileCommand;
+pub struct DeleteFileCommand;
 
-impl WorkflowCommand for WriteFileCommand {
+impl WorkflowCommand for DeleteFileCommand {
     fn name(&self) -> &'static str {
-        "WriteFile"
+        "DeleteFile"
     }
 
     fn execute(
         &self,
         inputs: &HashMap<String, String>,
-        context : &mut Context,
+       context : &mut Context,
         _step_name: &str,
         _step_id: u64,
-    ) -> Result<HashMap<String, String>,String> {
+    ) -> Result<HashMap<String, String>, String> {
         let path_expr = inputs.get("path").ok_or("Missing 'path' input")?;
-        let text_expr = inputs.get("text").ok_or("Missing 'text' input")?;
-
         let path = engine
             .eval_with_scope::<String>(scope, path_expr)
             .map_err(|e| format!("Failed to evaluate path: {}", e))?;
-        let text = engine
-            .eval_with_scope::<String>(scope, text_expr)
-            .map_err(|e| format!("Failed to evaluate text: {}", e))?;
 
-        write(&path, text.as_bytes()).map_err(|e| format!("File write failed: {}", e))?;
+        remove_file(&path).map_err(|e| format!("Failed to delete file: {}", e))?;
 
         let mut output = HashMap::new();
         output.insert("path".to_string(), path);
-        output.insert("status".to_string(), "written".to_string());
+        output.insert("status".to_string(), "deleted".to_string());
         Ok(output)
     }
 }
