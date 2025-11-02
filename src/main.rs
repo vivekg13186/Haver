@@ -1,25 +1,78 @@
-use boa_engine::{Context, Source};
+use log::{error, info};
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::Value;
 use std::collections::HashMap;
-use std::fs::read_to_string;
-mod commands;
-use commands::register_default_commands;
 use std::env;
+use std::error::Error;
+use std::fs::read_to_string;
+use std::vec::Vec;
+
+use rhai::{Engine, Scope};
+use std::fs::OpenOptions;
+use std::io::Write;
+
+#[derive(Serialize, Deserialize, Debug)]
+struct BasicAuth {
+    username: String,
+    password: String,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct Condition {
+    exp: String,
+    next: i32,
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(tag = "type")]
 enum Step {
     Start {
-        next: String,
+        next: i32,
     },
     End {},
     Condition {
-        conditions: HashMap<String, String>,
+        conditions: Vec<Condition>,
     },
-    Command {
-        command: String,
-        next: String,
-        inputs: HashMap<String, String>,
+    Log {
+        message: String,
+        next: i32,
+    },
+    ReadFile {
+        path: String,
+        next: i32,
+        content: String,
+        error: String,
+    },
+    WriteFile {
+        path: String,
+        content: String,
+        next: i32,
+        sucess: String,
+        error: String,
+    },
+    AppendFile {
+        path: String,
+        content: String,
+        next: i32,
+        sucess: String,
+        error: String,
+    },
+    DeleteFile {
+        path: String,
+        next: i32,
+        sucess: String,
+        error: String,
+    },
+    Http {
+        url: String,
+        method: String,
+        headers: Option<HashMap<String, String>>,
+        query: Option<HashMap<String, String>>,
+        body: Option<String>,
+        auth: Option<BasicAuth>,
+        next: i32,
+        status: String,
+        response: String,
     },
 }
 
@@ -27,163 +80,254 @@ enum Step {
 struct Workflow {
     name: String,
     inputs: HashMap<String, Value>,
-    steps: HashMap<String, Step>,
+    steps: Vec<Step>,
 }
 
-// ---- Emit structured JSON event ----
-fn emit_event(event_type: &str, step_name: &str, message: &str, step_id: u64) {
-    let event = json!({
-        "id": step_id,
-        "event": event_type,
-        "step": step_name,
-        "message": message,
-        "timestamp": chrono::Utc::now().to_rfc3339(),
-    });
-    println!("{}", serde_json::to_string_pretty(&event).unwrap());
+fn set_string_var(name: &str, value: &str, scope: &mut Scope) {
+    scope.set_value(name, value.to_string());
+}
+fn handle_step(step: &Step, engine: &mut Engine, scope: &mut Scope) -> Result<i32, Box<dyn Error>> {
+    match step {
+        Step::Start { next } => {
+            info!("Starting workflow");
+            Ok(*next)
+        }
+        Step::End {} => {
+            info!("Ending workflow");
+            return Ok(-1);
+        }
+        Step::Condition { conditions } => {
+            info!("executing condition");
+            for condition in conditions {
+                if engine.eval_with_scope::<bool>(scope, condition.exp.as_str())? {
+                    info!("matched condition {}", condition.exp);
+                    return Ok(condition.next);
+                }
+            }
+            return Ok(-1);
+        }
+        Step::Log { message, next } => {
+            info!(
+                "{}",
+                engine.eval_with_scope::<String>(scope, message.as_str())?
+            );
+            return Ok(*next);
+        }
+
+        Step::ReadFile {
+            path,
+            next,
+            content,
+            error,
+        } => {
+            let path_value = engine.eval_with_scope::<String>(scope, path.as_str())?;
+            match std::fs::read_to_string(path_value) {
+                Ok(file_content) => {
+                    info!("Read file ok : {}", path);
+                    set_string_var(content.as_str(), file_content.as_str(), scope);
+                    return Ok(*next);
+                }
+                Err(e) => {
+                    error!("Failed to read file: {}", e);
+                    set_string_var(error.as_str(), e.to_string().as_str(), scope);
+                    return Ok(*next);
+                }
+            }
+        }
+        Step::WriteFile {
+            path,
+            content,
+            next,
+            sucess,
+            error,
+        } => {
+            let path_value = engine.eval_with_scope::<String>(scope, path.as_str())?;
+            let content_value = engine.eval_with_scope::<String>(scope, content.as_str())?;
+            match std::fs::write(path_value, content_value) {
+                Ok(_) => {
+                    info!("Wrote file ok : {}", path);
+                    set_string_var(sucess.as_str(), "true", scope);
+                    set_string_var(error.as_str(), "", scope);
+                    return Ok(*next);
+                }
+                Err(e) => {
+                    error!("Failed to write file: {}", e);
+                    set_string_var(sucess.as_str(), "false", scope);
+                    set_string_var(error.as_str(), e.to_string().as_str(), scope);
+                    return Ok(*next);
+                }
+            }
+        }
+        Step::AppendFile {
+            path,
+            content,
+            next,
+            sucess,
+            error,
+        } => {
+            let path_value = engine.eval_with_scope::<String>(scope, path.as_str())?;
+            let content_value = engine.eval_with_scope::<String>(scope, content.as_str())?;
+            match OpenOptions::new()
+                .append(true)
+                .create(true)
+                .open(&path_value)
+            {
+                Ok(mut file) => {
+                    if let Err(e) = file.write_all(content_value.as_bytes()) {
+                        error!("Failed to append to file: {}", e);
+                        set_string_var(sucess.as_str(), "false", scope);
+                        set_string_var(error.as_str(), e.to_string().as_str(), scope);
+                    } else {
+                        info!("Appended to file ok : {}", path);
+                        set_string_var(sucess.as_str(), "true", scope);
+                        set_string_var(error.as_str(), "", scope);
+                    }
+                    Ok(*next)
+                }
+                Err(e) => {
+                    error!("Failed to open file for append: {}", e);
+                    set_string_var(sucess.as_str(), "false", scope);
+                    set_string_var(error.as_str(), e.to_string().as_str(), scope);
+                    Ok(*next)
+                }
+            }
+        }
+        Step::DeleteFile {
+            path,
+            next,
+            sucess,
+            error,
+        } => {
+            let path_value = engine.eval_with_scope::<String>(scope, path.as_str())?;
+            match std::fs::remove_file(&path_value) {
+                Ok(_) => {
+                    info!("Deleted file ok : {}", path);
+                    set_string_var(sucess.as_str(), "true", scope);
+                    set_string_var(error.as_str(), "", scope);
+                    Ok(*next)
+                }
+                Err(e) => {
+                    error!("Failed to delete file: {}", e);
+                    set_string_var(sucess.as_str(), "false", scope);
+                    set_string_var(error.as_str(), e.to_string().as_str(), scope);
+                    Ok(*next)
+                }
+            }
+        }
+        Step::Http {
+            url,
+            method,
+            headers,
+            query,
+            body,
+            auth,
+            next,
+            status,
+            response,
+        } => {
+            let url_value = engine.eval_with_scope::<String>(scope, url.as_str())?;
+            let method_value = engine.eval_with_scope::<String>(scope, method.as_str())?;
+            let client = reqwest::blocking::Client::new();
+
+            let mut req_builder = match method_value.to_uppercase().as_str() {
+                "GET" => client.get(&url_value),
+                "POST" => client.post(&url_value),
+                "PUT" => client.put(&url_value),
+                "DELETE" => client.delete(&url_value),
+                "PATCH" => client.patch(&url_value),
+                _ => {
+                    set_string_var(status.as_str(), "invalid_method", scope);
+                    set_string_var(response.as_str(), "", scope);
+                    return Ok(*next);
+                }
+            };
+
+            if let Some(hdrs) = headers {
+                let mut req_headers = reqwest::header::HeaderMap::new();
+                for (k, v) in hdrs {
+                    req_headers.insert(
+                        reqwest::header::HeaderName::from_bytes(k.as_bytes())?,
+                        reqwest::header::HeaderValue::from_str(v)?,
+                    );
+                }
+                req_builder = req_builder.headers(req_headers);
+            }
+
+            if let Some(q) = query {
+                req_builder = req_builder.query(&q);
+            }
+
+            if let Some(b) = body {
+                let body_value = engine.eval_with_scope::<String>(scope, b.as_str())?;
+                req_builder = req_builder.body(body_value);
+            }
+
+            if let Some(auth) = auth {
+                req_builder = req_builder.basic_auth(&auth.username, Some(&auth.password));
+            }
+
+            match req_builder.send() {
+                Ok(resp) => {
+                    let status_code = resp.status().as_u16().to_string();
+                    let resp_text = resp.text().unwrap_or_else(|_| "".to_string());
+                    set_string_var(status.as_str(), &status_code, scope);
+                    set_string_var(response.as_str(), &resp_text, scope);
+                }
+                Err(e) => {
+                    set_string_var(status.as_str(), "error", scope);
+                    set_string_var(response.as_str(), &e.to_string(), scope);
+                }
+            }
+            Ok(*next)
+        }
+    }
 }
 
+fn run_workflow(workflow: &Workflow) -> Result<(), Box<dyn Error>> {
+    let mut engine = Engine::new();
+    let mut scope: Scope = Scope::new();
+    let mut current_step = 0;
+
+    for (key, val) in &workflow.inputs {
+        match val {
+            Value::String(s) => {
+                set_string_var(key, s, &mut scope);
+            }
+            Value::Bool(b) => {
+                set_string_var(key, &b.to_string(), &mut scope);
+            }
+            Value::Number(n) => {
+                if let Some(f) = n.as_f64() {
+                    set_string_var(key, &f.to_string(), &mut scope);
+                }
+            }
+            Value::Null => {
+                set_string_var(key, "", &mut scope); // or "null" if you prefer
+            }
+            _ => {
+                // Optionally log or handle unsupported types like arrays or objects
+                error!("Unsupported input type for key '{}': {:?}", key, val);
+            }
+        }
+    }
+
+    while current_step != -1 {
+        if current_step < 0 || current_step as usize >= workflow.steps.len() {
+            error!("Invalid step index: {}", current_step);
+            break;
+        }
+        let step = &workflow.steps[current_step as usize];
+        current_step = handle_step(step, &mut engine, &mut scope)?;
+    }
+    Ok(())
+}
 fn main() {
+    env_logger::init();
     let args: Vec<String> = env::args().collect();
     if args.len() != 2 {
         panic!("expect work flow filename as input");
     }
-    let command_registry = register_default_commands();
-    // ---- Load and parse workflow ----
     let result = read_to_string(&args[1]).expect("File not found");
     let workflow: Workflow = serde_json::from_str(&result).expect("Unable to parse JSON");
-
-    // ---- Find start step ----
-    let (start_name, _) = workflow
-        .steps
-        .iter()
-        .find(|(_, v)| matches!(v, Step::Start { .. }))
-        .expect("No start step found");
-
-    let mut step_name = start_name.clone();
-
-    let mut context = Context::default();
-
-    // Load workflow inputs into JS context
-    for (key, value) in &workflow.inputs {
-        let js_value = match value {
-            Value::Null => "undefined".to_string(),
-            Value::Bool(b) => b.to_string(),
-            Value::Number(n) => n.to_string(),
-            Value::String(s) => format!("\"{}\"", s),
-            _ => continue, // skip arrays/objects for now
-        };
-        let script = format!("let {} = {};", key, js_value);
-        context.eval(Source::from_bytes(&script)).unwrap();
-    }
-
-    let mut step_counter: u64 = 1;
-
-    // ---- Main workflow loop ----
-    loop {
-        let current_step = match workflow.steps.get(&step_name) {
-            Some(s) => s,
-            None => {
-                emit_event(
-                    "error",
-                    &step_name,
-                    "Step not found in workflow",
-                    step_counter,
-                );
-                break;
-            }
-        };
-
-        match current_step {
-            Step::Start { next } => {
-                emit_event("start", &step_name, "Start step complete", step_counter);
-                step_counter += 1;
-                step_name = next.clone();
-            }
-
-            Step::End {} => {
-                emit_event("end", &step_name, "Workflow finished", step_counter);
-                break;
-            }
-
-            Step::Command {
-                command,
-                next,
-                inputs,
-            } => {
-                emit_event(
-                    "start",
-                    &step_name,
-                    "Command execution started",
-                    step_counter,
-                );
-                if let Some(cmd) = command_registry.get(command) {
-                    match cmd.execute(inputs,&mut context, &step_name, step_counter) {
-                        Ok(result_map) => {
-                            for (key, value) in result_map {
-                                let escaped_value = value.replace('"', "\\\"");
-                                let script = format!("let {} = \"{}\";", key, escaped_value);
-                                context.eval(Source::from_bytes(&script)).unwrap();
-                            }
-                        }
-                        Err(err) => {
-                            emit_event(
-                                "error",
-                                &step_name,
-                                &format!("Command failed: {}", err),
-                                step_counter,
-                            );
-                            break;
-                        }
-                    }
-                } else {
-                    eprintln!("⚠️ Unknown command: {}", command);
-                    break;
-                }
-                emit_event(
-                    "end",
-                    &step_name,
-                    "Command executed successfully",
-                    step_counter,
-                );
-                step_name = next.clone();
-            }
-            Step::Condition { conditions } => {
-                let mut matched = false;
-                for (cond, nxt) in conditions {
-                    let result = if cond == "else" {
-                        true
-                    } else {
-                        match context.eval(Source::from_bytes(cond)) {
-                            Ok(value) => value.as_boolean().unwrap_or(false),
-                            Err(_) => {
-                                emit_event(
-                                    "error",
-                                    &step_name,
-                                    &format!("Invalid condition: {}", cond),
-                                    step_counter,
-                                );
-                                false
-                            }
-                        }
-                    };
-                    if result {
-                        emit_event(
-                            "end",
-                            &step_name,
-                            &format!("Condition matched: {}", cond),
-                            step_counter,
-                        );
-                        step_counter += 1;
-                        step_name = nxt.clone();
-                        matched = true;
-                        break;
-                    }
-                }
-                if !matched {
-                    emit_event("error", &step_name, "No condition matched", step_counter);
-                    break;
-                }
-            }
-        }
-    }
+    run_workflow(&workflow).expect("Workflow execution failed");
 }

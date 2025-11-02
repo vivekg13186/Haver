@@ -1,39 +1,39 @@
 {
-    "name" : "Simple Workflow",
-    "inputs" : {
-        "a" : 100,
-        "b" : 10
+    "name": "Simple Workflow",
+    "inputs": {
+        "a": 100,
+        "b": 1000
     },
-    "steps":{
-        "Start":{
-            "type" : "Start",
-            "next" : "Check for big number"
+    "steps": [
+        {
+            "type": "Start",
+            "next": 1
         },
-        "Check for big number":{
-            "type" : "Condition",
-            "conditions" : {
-                "a>b" : "Print A",
-                "else" : "Print B"
-            }
+        {
+            "type": "Condition",
+            "conditions": [
+                {
+                    "exp": "a>b",
+                    "next": 2
+                },
+                {
+                    "exp": "true",
+                    "next": 3
+                }
+            ]
         },
-        "Print A":{
-            "type" :"Command",
-            "command" : "Log",
-            "inputs" : {
-                "message" : "\"A is the big number\""
-            },
-            "next": "End"
+        {
+            "type": "Log",
+            "message": "\"A is the big number\"",
+            "next": 4
         },
-        "Print B":{
-            "type" :"Command",
-            "command" : "Log",
-            "inputs" : {
-                "message" : "\"B is the big number\""
-            },
-            "next":"End"
+        {
+            "type": "Log",
+            "message": "\"B is the big number\"",
+            "next": 4
         },
-        "End" :{
-            "type" :"End"
+        {
+            "type": "End"
         }
-    }
+    ]
 }
