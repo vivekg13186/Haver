@@ -135,6 +135,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "haver"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "rhai",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "iana-time-zone"
 version = "0.1.64"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -275,16 +285,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
-]
-
-[[package]]
-name = "rust_test"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "rhai",
- "serde",
- "serde_json",
 ]
 
 [[package]]
