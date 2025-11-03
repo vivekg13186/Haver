@@ -1,8 +1,8 @@
 {
-    "name": "Simple Workflow",
+    "name": "File write Workflow",
     "inputs": {
-        "a": 100,
-        "b": 1000
+        "filename": "a.txt",
+        "message": "\"File content\""
     },
     "steps": [
         {
@@ -10,27 +10,17 @@
             "next": 1
         },
         {
-            "type": "Condition",
-            "conditions": [
-                {
-                    "exp": "a>b",
-                    "next": 2
-                },
-                {
-                    "exp": "true",
-                    "next": 3
-                }
-            ]
+            "type": "WriteFile",
+            "path": "filename",
+            "content" : "\"Hello vivek\"",
+            "next": 2,
+            "status": "fileStatus",
+            "error": "writeFileError"
         },
         {
             "type": "Log",
-            "message": "\"A is the big number\"",
-            "next": 4
-        },
-        {
-            "type": "Log",
-            "message": "\"B is the big number\"",
-            "next": 4
+            "message": "fileStatus + \"file status\" +writeFileError + \" error \" ",
+            "next": 3
         },
         {
             "type": "End"

@@ -19,6 +19,7 @@ pub struct Condition {
 pub enum Step {
     Start {
         next: i32,
+        schedule:Option<String>,
     },
     End {},
     Condition {
