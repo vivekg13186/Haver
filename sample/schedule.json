@@ -1,0 +1,22 @@
+{
+    "name": "Simple Workflow",
+    "inputs": {},
+    "steps": [
+        {
+            "type": "Start",
+            "schedule" :"1/10 * * * * *",
+            "next": 1
+        },
+         {
+            "type": "AppendFile",
+            "path": "\"schedule.log\"",
+            "content" : "\"still alive\\n\"",
+            "next": 2,
+            "status": "fileStatus",
+            "error": "writeFileError"
+        },
+        {
+            "type": "End"
+        }
+    ]
+}
