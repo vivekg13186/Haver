@@ -145,6 +145,10 @@ mod tests {
     fn test_condtion_workflow() {
         handle_file("./sample/condition.json");
     }
+    #[test]
+    fn test_write_file_workflow() {
+        handle_file("./sample/write_file.json");
+    }
 
     
 }
