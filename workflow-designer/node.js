@@ -1,15 +1,44 @@
+function registerNode(type,label,properties,onClick){
+
+    function MyNode(){
+        this.addInput("in", "number");
+        this.addOutput("out", "number");
+        this.properties = properties;
+        this.onSelected =()=>{
+             onClick(this);
+        }
+    }
+    LiteGraph.registerNodeType(type, MyNode);
+    MyNode.title = label;
+    MyNode.desc = label;
+}
+
 (function (global) {
     var LiteGraph = global.LiteGraph;
 
+    registerNode("core/hello","Hello",{message : ""},(node)=>{ console.log(node)});
+
     function Start() {
         this.addOutput("next", "number");
+        
+        this.addWidget("button", "Add Input", "condition", () => {
+            var name = "input " + (this.condition++);
+            this.addWidget("text", name, name, () => { });
+        });
+
+        this.properties = { schedule: "" ,inputs :{}};
+        this.onSelected =()=>{
+            this.mynewPorp = 10;
+            console.log(this.properties)
+        }
 
     }
 
     Start.title = "Start";
     Start.desc = "Start";
 
-    Start.prototype.onExecute = function () { };
+    Start.prototype.onExecute = function () { return {}
+    };
 
     LiteGraph.registerNodeType("core/Start", Start);
     //-------------------------------------
@@ -47,7 +76,7 @@
     function Log() {
         this.Log = 1;
         this.addInput("id", "number");
-        this.addWidget("text", "message", "message", () => { });
+        this.addWidget("text", "->message", "message", () => { });
         this.addOutput("next", "number");
     }
 
@@ -62,9 +91,9 @@
     function ReadFile() {
         this.ReadFile = 1;
         this.addInput("id", "number");
-        this.addWidget("text", "Input path", "path", () => { });
-        this.addWidget("text", "Output content", "content", () => { });
-        this.addWidget("text", "Output error", "error", () => { });
+        this.addWidget("text", "-> path", "path", () => { });
+        this.addWidget("text", "content ->", "content", () => { });
+        this.addWidget("text", "error ->", "error", () => { });
         this.addOutput("next", "number");
     }
 
@@ -78,10 +107,10 @@
     function WriteFile() {
         this.WriteFile = 1;
         this.addInput("id", "number");
-        this.addWidget("text", "Input path", "path", () => { });
-        this.addWidget("text", "Input content", "content", () => { });
-        this.addWidget("text", "Output status", "status", () => { });
-        this.addWidget("text", "Output error", "error", () => { });
+        this.addWidget("text", "-> path", "path", () => { });
+        this.addWidget("text", "-> content", "content", () => { });
+        this.addWidget("text", "status ->", "status", () => { });
+        this.addWidget("text", "error ->", "error", () => { });
         this.addOutput("next", "number");
     }
 
@@ -95,10 +124,10 @@
     function AppendFile() {
         this.AppendFile = 1;
         this.addInput("id", "number");
-        this.addWidget("text", "Input path", "path", () => { });
-        this.addWidget("text", "Input content", "content", () => { });
-        this.addWidget("text", "Output status", "status", () => { });
-        this.addWidget("text", "Output error", "error", () => { });
+        this.addWidget("text", "-> path", "path", () => { });
+        this.addWidget("text", "-> content", "content", () => { });
+        this.addWidget("text", "status ->", "status", () => { });
+        this.addWidget("text", "error ->", "error", () => { });
         this.addOutput("next", "number");
     }
 
@@ -112,9 +141,9 @@
     function DeleteFile() {
         this.DeleteFile = 1;
         this.addInput("id", "number");
-        this.addWidget("text", "Input path", "path", () => { });
-        this.addWidget("text", "Output status", "status", () => { });
-        this.addWidget("text", "Output error", "error", () => { });
+        this.addWidget("text", "-> path", "path", () => { });
+        this.addWidget("text", "status ->", "status", () => { });
+        this.addWidget("text", "error ->", "error", () => { });
         this.addOutput("next", "number");
     }
 
